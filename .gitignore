@@ -1,0 +1,12 @@
+screenshots/
+after_create_node.png
+after_dblclick.png
+connected.png
+after_upload.png
+after_select.png
+after_drag.png
+error.png
+__pycache__/
+*.pyc
+.vscode/
+.idea/

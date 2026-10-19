@@ -1,21 +1,42 @@
 """
-TC-0010 自动化测试：3D 场景
+TC-0010 自动化测试：3D 场景 - 添加全景图 + 修改参数 + 网格吸附
+测试软件：帧境 AI（桌面版，Electron，画布基于 React Flow）
 
-⚠️  上传全景图：
-    1. 点击「导入全景图」→ 弹文件对话框
-    2. pygetwindow 拿到对话框窗口位置
-    3. pyautogui 按窗口内比例点击文件图标
-    4. 点击「打开」按钮
+上传全景图流程（已验证可行）：
+    1. Playwright 点击「导入全景图」→ 弹文件对话框
+    2. pywinauto 连对话框
+    3. 地址栏跳转到 testdata 目录
+    4. 文件名框输入「风景全景图.jpg」
+    5. 点「打开」
+
+运行前置：
+    pip install playwright requests pywinauto pyperclip
+    python -m playwright install chromium
+    帧境 AI 已带 --remote-debugging-port=9222 启动
 """
 
 import os
 import sys
 import time
 import requests
-import pyautogui
-import pygetwindow as gw
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+
+# pywinauto
+try:
+    from pywinauto import Application
+    from pywinauto.keyboard import send_keys
+    PYWINAUTO_OK = True
+except ImportError:
+    PYWINAUTO_OK = False
+    print("[WARN] pywinauto 未安装")
+
+try:
+    import pyperclip
+    PYPERCLIP_OK = True
+except ImportError:
+    PYPERCLIP_OK = False
+    print("[WARN] pyperclip 未安装")
 
 PORT = 9222
 ROOT = Path(__file__).parent
@@ -23,6 +44,8 @@ ROOT = Path(__file__).parent
 _ABS_PANO = Path(r"D:\Desktop\自动化测试\auto-test-project\testdata\风景全景图.jpg")
 _REL_PANO = ROOT / "testdata" / "风景全景图.jpg"
 PANO_PATH = _ABS_PANO if _ABS_PANO.exists() else _REL_PANO
+PANO_DIR = PANO_PATH.parent
+PANO_NAME = PANO_PATH.name
 
 TARGET_POSITION = {"X": "5", "Y": "-5", "Z": "5"}
 TARGET_ROTATION = {"X": "1", "Y": "-1", "Z": "3"}
@@ -30,8 +53,6 @@ TARGET_COLOR_HEX = "#87CEEB"
 
 SHOT_DIR = ROOT / "screenshots"
 SHOT_DIR.mkdir(exist_ok=True)
-
-pyautogui.FAILSAFE = False
 
 
 def shot(page, name):
@@ -108,16 +129,30 @@ def dblclick_3d_node(page):
     shot(page, "tc0010_in_director.png")
 
 
-# ============ 上传全景图 ============
+# ============ 【核心】用 pywinauto 上传全景图 ============
 def upload_panorama(page):
-    print("\n\n########## 上传全景图 ##########")
+    """
+    上传全景图：
+      1. Playwright 点「导入全景图」→ 弹文件对话框
+      2. pywinauto 连对话框（win32 后端）
+      3. Alt+D 到地址栏，输入 testdata 目录，回车
+      4. Alt+N 到文件名框，输入「风景全景图.jpg」
+      5. 回车打开
+    """
+    print("\n\n########## 上传全景图（pywinauto）##########")
     print(f"  目标: {PANO_PATH}")
+    print(f"  目录: {PANO_DIR}")
+    print(f"  文件名: {PANO_NAME}")
 
     if not PANO_PATH.exists():
         print(f"  [ERROR] 文件不存在")
         return False
 
-    # 定位「导入全景图」按钮
+    if not PYWINAUTO_OK:
+        print("  [FAIL] pywinauto 未安装")
+        return False
+
+    # 1. 定位「导入全景图」按钮
     btn = None
     for locator in [
         page.get_by_role("button", name="导入全景图"),
@@ -147,19 +182,10 @@ def upload_panorama(page):
             pass
 
     if not btn:
-        print("  [FAIL] 找不到按钮")
+        print("  [FAIL] 找不到「导入全景图」按钮")
         return False
 
-    # 激活帧境窗口
-    try:
-        wins = gw.getWindowsWithTitle("帧境")
-        if wins:
-            wins[0].activate()
-            time.sleep(0.5)
-    except Exception:
-        pass
-
-    # 点击按钮，弹文件对话框
+    # 2. 点击按钮，弹对话框
     try:
         btn.click(timeout=3000)
         print("  [OK] 已点击「导入全景图」")
@@ -170,68 +196,114 @@ def upload_panorama(page):
     time.sleep(3)
     shot(page, "tc0010_after_click_pano_btn.png")
 
-    # ★ 找到文件对话框窗口
-    print("\n  [pyautogui] 查找文件对话框窗口")
-    dialog = None
-    for title_kw in ["打开", "Open", "选择", "浏览"]:
+    # ============ pywinauto 操作对话框 ============
+    print("\n  [pywinauto] 连接文件对话框")
+    dlg = None
+    # 用 win32 后端（uia 连不上）
+    for title in ["打开", "Open"]:
         try:
-            wins = gw.getWindowsWithTitle(title_kw)
-            for w in wins:
-                if w.width > 400 and w.height > 300:
-                    dialog = w
-                    print(f"  找到窗口: title='{w.title}' rect=({w.left},{w.top},{w.width}x{w.height})")
-                    break
-            if dialog:
-                break
+            app = Application(backend="win32").connect(title=title, timeout=5)
+            dlg = app.window(title=title)
+            print(f"  [OK] 连接成功，title='{title}'")
+            break
         except Exception:
-            pass
+            continue
 
-    if not dialog:
-        # 列出所有窗口，帮助调试
-        print("  [WARN] 没找到标题含「打开」的窗口，列出所有窗口：")
+    if not dlg:
         try:
-            for w in gw.getAllWindows():
-                if w.visible and w.width > 300 and w.height > 200:
-                    print(f"    '{w.title}' rect=({w.left},{w.top},{w.width}x{w.height})")
-        except Exception:
-            pass
-        print("  [FAIL] 找不到文件对话框")
-        return False
+            app = Application(backend="win32").connect(title_re=".*(打开|Open|选择).*", timeout=5)
+            dlg = app.window(title_re=".*(打开|Open|选择).*")
+            print("  [OK] 正则匹配成功")
+        except Exception as e:
+            print(f"  [FAIL] 无法连接对话框: {e}")
+            return False
 
     try:
-        dialog.activate()
+        print(f"  对话框标题: '{dlg.window_text()}'")
     except Exception:
         pass
-    time.sleep(1)
 
-    # ★ 点击文件图标
-    # 从截图看，文件图标在对话框的左上区域
-    # 设图标网格第 1 行第 2 个（风景全景图.jpg 是第 2 个）
-    # 相对对话框：x ≈ 490, y ≈ 200（对话框约 1127x723）
-    # 用比例：x_ratio ≈ 0.435, y_ratio ≈ 0.28
-    file_x = dialog.left + int(dialog.width * 0.435)
-    file_y = dialog.top + int(dialog.height * 0.28)
+    # 激活对话框
+    try:
+        dlg.set_focus()
+        time.sleep(0.5)
+    except Exception:
+        pass
 
-    print(f"  [点击文件图标] ({file_x},{file_y})")
-    pyautogui.click(file_x, file_y)
-    time.sleep(0.8)
-    shot(page, "tc0010_after_click_file.png")
+    # ============ 步骤 1：Alt+D 跳地址栏，输入目录 ============
+    print("\n  [步骤1] Alt+D 跳到地址栏 → 输入目录 → 回车")
+    try:
+        # Alt+D 跳到地址栏（Windows 通用快捷键）
+        send_keys("%d")   # pywinauto 的 Alt+D 写法
+        time.sleep(0.5)
 
-    # ★ 点击「打开」按钮（右下角）
-    # 相对对话框：右下角附近
-    # x ≈ 850, y ≈ 680（对话框约 1127x723）
-    # 比例：x_ratio ≈ 0.755, y_ratio ≈ 0.94
-    open_x = dialog.left + int(dialog.width * 0.755)
-    open_y = dialog.top + int(dialog.height * 0.94)
+        # 清空地址栏
+        send_keys("^a")
+        time.sleep(0.2)
+        send_keys("{DELETE}")
+        time.sleep(0.2)
 
-    print(f"  [点击「打开」] ({open_x},{open_y})")
-    pyautogui.click(open_x, open_y)
-    time.sleep(3)
+        # 输入目录（用剪贴板，避免中文乱码）
+        if PYPERCLIP_OK:
+            pyperclip.copy(str(PANO_DIR))
+            time.sleep(0.3)
+            send_keys("^v")
+            time.sleep(0.5)
+            print(f"  已粘贴目录: {PANO_DIR}")
+        else:
+            # 没剪贴板，直接 send_keys
+            send_keys(str(PANO_DIR), with_spaces=True, pause=0.02)
+            time.sleep(0.5)
+            print(f"  已 send_keys 目录")
+
+        # 回车跳转
+        send_keys("{ENTER}")
+        time.sleep(2)
+        shot(page, "tc0010_after_goto_dir.png")
+        print("  [OK] 已跳转目录")
+    except Exception as e:
+        print(f"  步骤1失败: {e}")
+
+    # ============ 步骤 2：Alt+N 跳文件名框，输入文件名 ============
+    print("\n  [步骤2] Alt+N 跳到文件名框 → 输入文件名 → 回车")
+    try:
+        # Alt+N 跳到文件名框
+        send_keys("%n")   # pywinauto 的 Alt+N 写法
+        time.sleep(0.5)
+
+        # 清空
+        send_keys("^a")
+        time.sleep(0.2)
+        send_keys("{DELETE}")
+        time.sleep(0.2)
+
+        # 输入文件名（用剪贴板，避免中文乱码）
+        if PYPERCLIP_OK:
+            pyperclip.copy(PANO_NAME)
+            time.sleep(0.3)
+            send_keys("^v")
+            time.sleep(0.5)
+            print(f"  已粘贴文件名: {PANO_NAME}")
+        else:
+            send_keys(PANO_NAME, with_spaces=True, pause=0.02)
+            time.sleep(0.5)
+            print(f"  已 send_keys 文件名")
+
+        shot(page, "tc0010_after_input_filename.png")
+
+        # 回车 = 点「打开」
+        send_keys("{ENTER}")
+        time.sleep(3)
+        print("  [OK] 已回车打开")
+    except Exception as e:
+        print(f"  步骤2失败: {e}")
+
     shot(page, "tc0010_after_upload_pano.png")
 
     # 验证
+    time.sleep(2)
     cnt = page.get_by_text("未连接全景图", exact=False).count()
-    print(f"  上传后「未连接全景图」出现次数: {cnt}")
+    print(f"\n  上传后「未连接全景图」出现次数: {cnt}")
     if cnt == 0:
         print("  [OK] 全景图上传成功")
         return True

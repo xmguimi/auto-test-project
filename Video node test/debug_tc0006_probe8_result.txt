@@ -1,0 +1,3 @@
+js_click=True
+ve=1 modal=1
+UI: [{"tag": "BUTTON", "t": "抽当前帧", "cls": "tk-run outline", "aria": ""}, {"tag": "BUTTON", "t": "选帧抽取", "cls": "tk-run", "aria": ""}, {"tag": "BUTTON", "t": "720p", "cls": "", "aria": ""}, {"tag": "BUTTON", "t": "1080p", "cls": "on", "aria": ""}, {"tag": "BUTTON", "t": "2k", "cls": "", "aria": ""}, {"tag": "BUTTON", "t": "4k", "cls": "", "aria": ""}, {"tag": "BUTTON", "t": "运行", "cls": "tk-run", "aria": ""}, {"tag": "BUTTON", "t": "添加视频", "cls": "ve-merge-add", "aria": ""}, {"tag": "BUTTON", "t": "拼接到画布", "cls": "ve-save", "aria": ""}, {"tag": "BUTTON", "t": "1×", "cls": "zpct", "aria": ""}, {"tag": "BUTTON", "t": "保存到画布", "cls": "ve-save", "aria": ""}]
